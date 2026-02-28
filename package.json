@@ -1,0 +1,56 @@
+{
+  "name": "petal",
+  "version": "0.1.0",
+  "description": "Agent framework with built-in evals, tracing, and guardrails",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "petal": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./scorers": {
+      "types": "./dist/eval/scorers/index.d.ts",
+      "import": "./dist/eval/scorers/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "eval": "tsx src/cli.ts eval",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "agent",
+    "ai",
+    "llm",
+    "eval",
+    "tracing",
+    "guardrails",
+    "framework"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ai": "^4.3",
+    "better-sqlite3": "^11.8",
+    "commander": "^13.1",
+    "yaml": "^2.7",
+    "zod": "^3.24"
+  },
+  "devDependencies": {
+    "@ai-sdk/openai": "^1.3",
+    "@types/better-sqlite3": "^7.6",
+    "@types/node": "^22.13",
+    "tsx": "^4.19",
+    "typescript": "^5.7",
+    "vitest": "^3.0"
+  },
+  "peerDependencies": {
+    "zod": "^3.0"
+  }
+}
