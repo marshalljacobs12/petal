@@ -1,0 +1,41 @@
+# Eval test cases for the weather agent.
+#
+# Run with:
+#   python examples/weather_agent/agent.py --eval
+
+agent: weather-assistant
+scorers: [tool_accuracy, cost]
+
+cases:
+  - name: single city query
+    input: "What's the weather in Tokyo?"
+    expected:
+      tools_called: ["get_weather"]
+      tool_args:
+        get_weather: { "city": "Tokyo" }
+    thresholds:
+      tool_accuracy: 1.0
+
+  - name: city with units
+    input: "What's the weather in London in celsius?"
+    expected:
+      tools_called: ["get_weather"]
+      tool_args:
+        get_weather: { "city": "London", "units": "celsius" }
+    thresholds:
+      tool_accuracy: 1.0
+
+  - name: multi-city comparison
+    input: "Compare the weather in Tokyo and New York"
+    expected:
+      tools_called: ["get_weather", "get_weather"]
+    thresholds:
+      tool_accuracy: 1.0
+
+  - name: cost budget
+    input: "What's the weather in Paris?"
+    expected:
+      tools_called: ["get_weather"]
+    thresholds:
+      tool_accuracy: 1.0
+      cost_usd: 0.01
