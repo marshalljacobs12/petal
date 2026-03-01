@@ -1,0 +1,31 @@
+[project]
+name = "petal"
+version = "0.1.0"
+description = "Agent framework with built-in evals, tracing, and guardrails"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "litellm>=1.30",       # Model-agnostic LLM calls (100+ providers)
+    "pydantic>=2.0",       # Data validation + JSON Schema for tool parameters
+    "click>=8.0",          # CLI framework for `petal eval`
+    "pyyaml>=6.0",         # Parse YAML eval test case files
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+# This tells pip: when someone runs `petal` on the command line, call petal.cli:main
+[project.scripts]
+petal = "petal.cli:main"
+
+# Use setuptools as the build backend (simplest option)
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
