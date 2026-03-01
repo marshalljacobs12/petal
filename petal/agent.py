@@ -21,6 +21,7 @@ from typing import Any
 import litellm
 
 from petal.tool import PetalTool
+from petal.tracer import Tracer, TraceData
 
 
 # --- Result types ---
@@ -50,7 +51,7 @@ class AgentResult:
     steps: list[StepInfo] = field(default_factory=list)
     usage: TokenUsage = field(default_factory=TokenUsage)
     cost: float = 0.0
-    # TODO (Phase 2): trace: TraceData = None
+    trace: TraceData | None = None
 
 
 # --- Agent class ---
@@ -88,6 +89,9 @@ class Agent:
     async def arun(self, message: str) -> AgentResult:
         """Run the agent asynchronously. This is where the real work happens."""
 
+        # --- Start tracing ---
+        tracer = Tracer(self.name)
+
         # --- Build the initial messages list ---
         messages: list[dict[str, Any]] = []
 
@@ -109,7 +113,10 @@ class Agent:
 
         for step_num in range(self.max_steps):
 
-            # --- Call the LLM ---
+            # --- Call the LLM (with tracing) ---
+            llm_span = tracer.start_span("llm_call", f"llm_call_{step_num}")
+            llm_span.input = messages
+
             response = await litellm.acompletion(
                 model=self.model,
                 messages=messages,
@@ -140,6 +147,17 @@ class Agent:
             except Exception:
                 step_cost = 0.0
 
+            # Record span metadata
+            llm_span.output = assistant_message.model_dump() if hasattr(assistant_message, 'model_dump') else str(assistant_message)
+            if step_tokens:
+                llm_span.tokens = {
+                    "prompt_tokens": step_tokens.prompt_tokens,
+                    "completion_tokens": step_tokens.completion_tokens,
+                    "total_tokens": step_tokens.total_tokens,
+                }
+            llm_span.cost = step_cost
+            llm_span.end()
+
             steps.append(StepInfo(
                 type="llm_call",
                 name=self.model,
@@ -153,11 +171,14 @@ class Agent:
 
             if not tool_calls:
                 # No tool calls — the LLM is done, it produced a text response.
+                final_text = assistant_message.content or ""
+                trace_data = self._save_trace(tracer, message, final_text)
                 return AgentResult(
-                    text=assistant_message.content or "",
+                    text=final_text,
                     steps=steps,
                     usage=total_usage,
                     cost=total_cost,
+                    trace=trace_data,
                 )
 
             # --- Execute tool calls ---
@@ -172,9 +193,14 @@ class Agent:
                 # Look up the tool
                 petal_tool = tool_map.get(tool_name)
 
+                # Start a tracing span for this tool call (child of the LLM span that triggered it)
+                tool_span = tracer.start_span("tool_call", f"tool_call: {tool_name}", parent_id=llm_span.id)
+
                 if not petal_tool:
                     # LLM called a tool that doesn't exist — send error back
                     error_msg = f"Unknown tool: {tool_name}"
+                    tool_span.input = tool_args_str
+                    tool_span.fail(error_msg)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
@@ -189,6 +215,8 @@ class Agent:
                     params = petal_tool.parameters_model(**args_dict)
                 except Exception as e:
                     error_msg = f"Invalid arguments for {tool_name}: {e}"
+                    tool_span.input = tool_args_str
+                    tool_span.fail(error_msg)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
@@ -198,12 +226,15 @@ class Agent:
                     continue
 
                 # Execute the tool
+                tool_span.input = args_dict
                 try:
                     result = await petal_tool.execute(params)
                     result_str = json.dumps(result) if not isinstance(result, str) else result
+                    tool_span.end(result)
                 except Exception as e:
                     result = {"error": str(e)}
                     result_str = json.dumps(result)
+                    tool_span.fail(str(e))
 
                 # Append tool result to messages so the LLM can see it
                 messages.append({
@@ -222,9 +253,25 @@ class Agent:
             # Loop continues — LLM will see the tool results and decide next action.
 
         # Hit max_steps without the LLM finishing
+        final_text = f"Agent stopped after {self.max_steps} steps without completing."
+        trace_data = self._save_trace(tracer, message, final_text)
         return AgentResult(
-            text=f"Agent stopped after {self.max_steps} steps without completing.",
+            text=final_text,
             steps=steps,
             usage=total_usage,
             cost=total_cost,
+            trace=trace_data,
         )
+
+    @staticmethod
+    def _save_trace(tracer: Tracer, input_text: str, output_text: str) -> TraceData:
+        """Finalize the trace and persist it to the default store."""
+        trace_data = tracer.to_trace_data(
+            input_text=input_text,
+            output_text=output_text,
+        )
+        from petal.store import get_default_store
+        store = get_default_store()
+        if store:
+            store.save_trace(trace_data)
+        return trace_data
