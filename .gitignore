@@ -10,4 +10,5 @@ build/
 .env
 .env.*
 .venv/
+venv/
 .pytest_cache/
